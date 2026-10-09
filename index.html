@@ -11,6 +11,14 @@
 <meta name="apple-mobile-web-app-title" content="청약서 서명">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" href="icon-192.png">
+<meta name="description" content="청약서 PDF에 고객 서명과 이름을 받아 PDF로 저장하는 앱">
+<meta property="og:type" content="website">
+<meta property="og:title" content="청약서 서명">
+<meta property="og:description" content="눌러서 열고, 홈 화면에 앱으로 설치하세요">
+<meta property="og:url" content="https://sentaro757.github.io/cheongyak-sign/">
+<meta property="og:image" content="https://sentaro757.github.io/cheongyak-sign/icon-512.png">
+<meta property="og:image:width" content="512">
+<meta property="og:image:height" content="512">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>if("serviceWorker" in navigator) addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -177,13 +185,34 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .thumbs div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:#667}
 .thumbs img{height:34px;max-width:120px}
 
-@media (prefers-reduced-motion:reduce){.tray.flash .chip,.cust .padbox.empty-warn{animation:none}}
+/* 설치 안내 — 카톡 등 앱 안 브라우저로 열렸을 때, 또는 아직 홈 화면에 없을 때 */
+.inst{position:fixed;inset:0;z-index:80;background:rgba(10,15,25,.5);display:flex;align-items:flex-end;justify-content:center;
+  padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.inst-card{background:var(--surface);border-radius:18px;width:min(460px,100%);max-height:100%;overflow:auto;padding:22px 20px 14px;
+  display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow)}
+.inst-ic{width:56px;height:56px;border-radius:14px;background:#2a4a9a center/cover no-repeat;background-image:url(icon-192.png)}
+.inst h2{margin:0;font-size:20px;line-height:1.35;text-wrap:balance}
+.inst .say{margin:0;color:var(--muted);font-size:14px}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:s}
+.steps li{display:flex;gap:10px;align-items:center;font-size:15px;counter-increment:s}
+.steps li::before{content:counter(s);flex:0 0 26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+  font-weight:600;display:flex;align-items:center;justify-content:center;font-size:13px}
+.steps .k{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-weight:600;white-space:nowrap}
+.steps svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.inst-act{display:flex;flex-direction:column;gap:8px}
+.inst-act .btn{justify-content:center;min-height:48px;font-size:16px}
+.linkish{border:0;background:none;color:var(--muted);font-size:13px;text-decoration:underline;padding:8px;cursor:pointer;align-self:center}
+.inst-point{position:fixed;z-index:81;font-size:34px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5);pointer-events:none;animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(8px)}}
+
+@media (prefers-reduced-motion:reduce){.tray.flash .chip,.cust .padbox.empty-warn,.inst-point{animation:none}}
 @media (max-width:620px){.btn .t{display:none}.brand small{display:none}}
 </style>
 
 <div class="top" id="agent-top">
   <div class="bar">
     <div class="brand">청약서 서명 <small id="fname">예시 청약서</small></div>
+    <button class="btn" id="inst-btn" hidden>앱 설치</button>
     <button class="btn" id="open" title="청약서 PDF 열기"><span aria-hidden="true">📄</span><span class="t">PDF 열기</span></button>
     <input type="file" id="file" accept="application/pdf,.pdf" hidden>
     <div class="grp">
@@ -294,6 +323,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
         <button type="button" class="btn primary" id="c-finish">설계사 화면으로</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- 설치 안내 (홈 화면 앱판에서만 쓴다) -->
+<div class="inst" id="inst" hidden>
+  <div class="inst-card" role="dialog" aria-modal="true" aria-labelledby="inst-h">
+    <div class="inst-ic" aria-hidden="true"></div>
+    <h2 id="inst-h"></h2>
+    <p class="say" id="inst-say"></p>
+    <ol class="steps" id="inst-steps"></ol>
+    <div class="inst-act" id="inst-act"></div>
+    <button type="button" class="linkish" id="inst-later">나중에 할게요 — 그냥 여기서 쓰기</button>
   </div>
 </div>
 
@@ -1339,6 +1380,133 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       });
     }).then(function(bytes){ return {bytes:bytes,hints:[hints],signA:signA,nameA:nameA,rows:rowsOut}; });
   }
+
+  /* ═════════ 설치 안내 ═════════
+     홈 화면 앱판(manifest 가 붙은 판)에서만 돈다.
+     카톡으로 받은 링크는 카톡 안 브라우저로 열린다. 거기서는 홈 화면 설치가 안 되니
+     먼저 바깥 브라우저로 내보내고, 바깥 브라우저에서는 기기별 설치 방법을 화면에 보여 준다. */
+  var INST = (function(){
+    if(!document.querySelector('link[rel="manifest"]')) return null;
+    var ua=navigator.userAgent;
+    var iPadOS = navigator.platform==="MacIntel" && navigator.maxTouchPoints>1;
+    var ios = /iPhone|iPad|iPod/.test(ua) || iPadOS, ipad=/iPad/.test(ua)||iPadOS;
+    var android = /Android/.test(ua);
+    var kakao = /KAKAOTALK/i.test(ua);
+    var inapp = kakao || /NAVER\(inapp|; wv\)|Line\/|Instagram|FBAN|FBAV|DaumApps|BAND\/|everytimeApp|whale\/.*inapp/i.test(ua);
+    var samsung = /SamsungBrowser/.test(ua);
+    var iosOther = ios && /CriOS|FxiOS|EdgiOS|Whale/.test(ua);
+    var mobile = ios || android;
+    var standalone = (window.matchMedia&&matchMedia("(display-mode: standalone)").matches) || navigator.standalone===true;
+    var deferred=null, KEY="cheongyak-sign.inst-later";
+    var SHARE='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+    var PLUS='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+    var point=null;
+
+    function k(html){ return '<span class="k">'+html+'</span>'; }
+    function btn(label,primary,fn){
+      var b=document.createElement("button"); b.type="button"; b.className="btn"+(primary?" primary":""); b.textContent=label;
+      b.addEventListener("click",fn); $("inst-act").appendChild(b); return b;
+    }
+    function copyUrl(){
+      var u=location.href.split("#")[0];
+      function fallback(){
+        var t=document.createElement("input"); t.value=u; document.body.appendChild(t); t.select();
+        try{ document.execCommand("copy"); toast("주소를 복사했습니다. 인터넷 앱 주소창에 붙여 넣으세요",3500); }
+        catch(e){ toast(u,6000); }
+        t.remove();
+      }
+      try{ navigator.clipboard.writeText(u).then(function(){ toast("주소를 복사했습니다. 인터넷 앱 주소창에 붙여 넣으세요",3500); },fallback); }
+      catch(e){ fallback(); }
+    }
+    function openOutside(){
+      var u=location.href.split("#")[0];
+      if(kakao){ location.href="kakaotalk://web/openExternal?url="+encodeURIComponent(u); return; }
+      if(android){ location.href="intent://"+u.replace(/^https?:\/\//,"")+"#Intent;scheme=https;package=com.android.chrome;end"; return; }
+      copyUrl();
+    }
+    function pointAt(where){
+      if(point){ point.remove(); point=null; }
+      if(!where) return;
+      point=document.createElement("div"); point.className="inst-point"; point.textContent=where==="bottom"?"↓":"↑";
+      if(where==="bottom"){ point.style.left="calc(50% - 10px)"; point.style.bottom="calc(4px + env(safe-area-inset-bottom,0px))"; }
+      else { point.style.right="96px"; point.style.top="calc(4px + env(safe-area-inset-top,0px))"; }
+      document.body.appendChild(point);
+    }
+    function fill(h,say,steps){
+      $("inst-h").textContent=h; $("inst-say").textContent=say;
+      $("inst-steps").innerHTML=steps.map(function(s){ return "<li><span>"+s+"</span></li>"; }).join("");
+      $("inst-act").innerHTML="";
+    }
+
+    function showInapp(){
+      var where = kakao ? "카카오톡" : "앱";
+      fill(where+" 안에서 열렸어요",
+        "여기서는 홈 화면에 설치할 수 없어요. "+(ios?"Safari":"Chrome 같은 인터넷 앱")+"로 다시 열어 주세요.",
+        ios ? (kakao
+              ? ["화면 오른쪽 아래 "+k("⋯")+" 또는 "+k(SHARE+" 공유")+" 누르기", k("Safari로 열기")+" 누르기"]
+              : ["화면의 "+k("⋯")+" 메뉴 누르기", k("Safari로 열기")+" 또는 "+k("외부 브라우저")+" 누르기"])
+            : ["화면 오른쪽 위 "+k("⋮")+" 누르기", k("다른 브라우저로 열기")+" 누르기"]);
+      btn(kakao||android ? (ios?"Safari로 열기":"인터넷 앱으로 열기") : "주소 복사", true, openOutside);
+      if(kakao||android) btn("주소 복사",false,copyUrl);
+      $("inst").hidden=false;
+    }
+    function showInstall(){
+      if(deferred){
+        fill("홈 화면에 앱으로 설치하세요","설치하면 아이콘 하나로 전체 화면에서 열리고, 인터넷이 없어도 열려요.",[]);
+        btn("앱 설치",true,function(){
+          var d=deferred; deferred=null;
+          d.prompt(); d.userChoice.then(function(c){ if(c&&c.outcome==="accepted") hide(); else showInstall(); },function(){});
+        });
+      } else if(ios && !iosOther){
+        fill("홈 화면에 앱으로 설치하세요","설치하면 아이콘 하나로 전체 화면에서 열리고, 인터넷이 없어도 열려요.",[
+          (ipad?"주소창 오른쪽 위 ":"화면 아래 가운데 ")+k(SHARE+" 공유")+" 누르기",
+          "목록을 올려 "+k(PLUS+" 홈 화면에 추가")+" 누르기",
+          "오른쪽 위 "+k("추가")+" 누르기"]);
+        pointAt(ipad?"top":"bottom");
+      } else if(ios){
+        fill("홈 화면에 앱으로 설치하세요","주소창 옆 공유 버튼에서 추가할 수 있어요. 안 보이면 Safari로 열어 주세요.",[
+          "주소창 오른쪽 "+k(SHARE+" 공유")+" 누르기", k(PLUS+" 홈 화면에 추가")+" 누르기", k("추가")+" 누르기"]);
+        btn("주소 복사 (Safari에 붙여 넣기)",false,copyUrl);
+      } else if(samsung){
+        fill("홈 화면에 앱으로 설치하세요","설치하면 아이콘 하나로 전체 화면에서 열리고, 인터넷이 없어도 열려요.",[
+          "화면 아래 오른쪽 "+k("≡")+" 누르기", k("현재 페이지 추가")+" 누르기", k("홈 화면")+" 고르기"]);
+      } else if(android){
+        fill("홈 화면에 앱으로 설치하세요","설치하면 아이콘 하나로 전체 화면에서 열리고, 인터넷이 없어도 열려요.",[
+          "화면 오른쪽 위 "+k("⋮")+" 누르기", k("앱 설치")+" 또는 "+k("홈 화면에 추가")+" 누르기", k("설치")+" 누르기"]);
+      } else {
+        fill("태블릿·휴대폰에 설치하세요","이 주소를 태블릿이나 휴대폰에서 열면 홈 화면에 설치할 수 있어요.",[
+          "아래 "+k("주소 복사")+" 누르기", "카카오톡 '나와의 채팅'에 붙여 보내기", "태블릿에서 링크를 열고 안내대로 설치"]);
+        btn("주소 복사",true,copyUrl);
+      }
+      $("inst").hidden=false;
+    }
+    function hide(){ $("inst").hidden=true; pointAt(null); }
+    function open(){ if(inapp) showInapp(); else showInstall(); }
+
+    $("inst-later").addEventListener("click",function(){ lsSet(KEY,String(Date.now())); hide(); });
+    $("inst").addEventListener("pointerdown",function(e){ if(e.target===$("inst")){ lsSet(KEY,String(Date.now())); hide(); } });
+    $("inst-btn").addEventListener("click",open);
+
+    if(standalone) return {};
+    window.addEventListener("beforeinstallprompt",function(e){
+      e.preventDefault(); deferred=e; $("inst-btn").hidden=false;
+      if(!$("inst").hidden && !inapp) showInstall();
+    });
+    window.addEventListener("appinstalled",function(){
+      hide(); $("inst-btn").hidden=true; toast("설치했습니다. 이제 홈 화면의 아이콘으로 여세요",4000);
+    });
+    $("inst-btn").hidden=!(mobile||inapp);
+
+    if(kakao){
+      /* 카톡이면 곧장 바깥 브라우저로 내보낸다. 한 번만 — 돌아왔을 때 되풀이하지 않게 */
+      var tried=false; try{ tried=sessionStorage.getItem("cheongyak-sign.kx")==="1"; sessionStorage.setItem("cheongyak-sign.kx","1"); }catch(e){}
+      if(!tried) setTimeout(openOutside,300);
+    }
+    var later=+lsGet(KEY)||0;
+    if(inapp) setTimeout(showInapp,kakao?1200:400);
+    else if(mobile && Date.now()-later>3*24*3600e3) setTimeout(function(){ if($("cust").hidden) showInstall(); },1500);
+    return {};
+  })();
 
   /* ═════════ 시작 ═════════ */
   function boot(){
