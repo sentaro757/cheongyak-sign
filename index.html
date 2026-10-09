@@ -88,6 +88,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .chip .lb{font-size:12px;display:flex;justify-content:space-between;gap:4px;align-items:center}
 .chip .lb span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip .ed{border:0;background:none;color:var(--muted);font-size:12px;padding:0 2px;cursor:pointer;text-decoration:underline}
+.chip .ed:disabled{opacity:.35;cursor:default;text-decoration:none}
 .chip.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .chip.on::after{content:"넣는 중";position:absolute;top:-8px;right:8px;background:var(--accent);color:var(--surface);
   font-size:10px;padding:0 6px;border-radius:9px;line-height:16px}
@@ -303,7 +304,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     <div class="cust-top">
       <div class="dots" id="c-dots"></div>
       <span class="step" id="c-step"></span>
-      <button type="button" class="btn quit" id="c-quit">설계사 화면</button>
+      <button type="button" class="btn quit" id="c-quit">설계사 화면으로 나가기</button>
     </div>
     <h1 id="c-title"></h1>
     <p class="say" id="c-say"></p>
@@ -323,7 +324,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
       <div class="thumbs" id="c-thumbs"></div>
       <div class="row" style="justify-content:center">
         <button type="button" class="btn" id="c-back">← 다시 보기</button>
-        <button type="button" class="btn primary" id="c-finish">설계사 화면으로</button>
+        <button type="button" class="btn primary" id="c-finish">설계사 화면으로 나가기</button>
       </div>
     </div>
   </div>
@@ -618,8 +619,10 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
       else if(s.img){ var im=new Image(); im.src=s.img; im.alt=s.label; pv.appendChild(im); }
       else pv.innerHTML = isAgent(s)||s.kind==="text" ? "<em>고치기를 눌러<br>직접 쓰세요</em>" : "<em>고객 서명 받기에서<br>한 번 받습니다</em>";
       b.querySelector(".lb span").textContent=s.label+(s.remember?" ★":"");
+      var ed=b.querySelector(".ed");
+      if(ownFor(s)){ ed.disabled=true; ed.title="칸마다 직접 방식에서는 고객이 칸마다 씁니다"; }
       b.addEventListener("click",function(e){
-        if(e.target.classList.contains("ed")){ openPad(s.id); return; }
+        if(e.target.classList.contains("ed")){ if(!e.target.disabled) openPad(s.id); return; }
         if(!ownFor(s) && !s.img && (isAgent(s)||s.kind==="text")){ openPad(s.id,true); return; }
         S.active = (S.active===s.id) ? null : s.id;
         renderTray(); syncPicking();
@@ -1223,8 +1226,8 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
   $("c-finish").addEventListener("click",function(){ leaveCustomer(); toast("고객 서명을 모두 넣었습니다. 확인 후 PDF 저장을 누르세요",4000); });
   $("c-quit").addEventListener("click",function(){
     var b=this;
-    if(b.dataset.arm!=="1"){ b.dataset.arm="1"; b.textContent="한 번 더 누르면 나갑니다"; setTimeout(function(){ b.dataset.arm=""; b.textContent="설계사 화면"; },3000); return; }
-    b.dataset.arm=""; b.textContent="설계사 화면";
+    if(b.dataset.arm!=="1"){ b.dataset.arm="1"; b.textContent="한 번 더 누르면 나갑니다"; setTimeout(function(){ b.dataset.arm=""; b.textContent="설계사 화면으로 나가기"; },3000); return; }
+    b.dataset.arm=""; b.textContent="설계사 화면으로 나가기";
     commitAsk(); leaveCustomer();
   });
   $("hand").addEventListener("click",enterCustomer);
