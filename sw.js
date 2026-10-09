@@ -1,7 +1,7 @@
-const CACHE = "cheongyak-sign-9c865dcf27";
+const CACHE = "cheongyak-sign-8e0cd28c0a";
 const CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil(
@@ -16,10 +16,11 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   const font = /fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (url.origin !== location.origin && !font) return;
+  if (url.pathname.endsWith("version.json")) return;
   if (req.mode === "navigate") {
     /* 화면은 새 버전을 먼저 받아 보고, 안 되면(오프라인) 넣어 둔 것을 쓴다 */
     e.respondWith(
-      fetch(req).then((r) => { const c = r.clone(); caches.open(CACHE).then((x) => x.put("index.html", c)); return r; })
+      fetch(req.url, { cache: "no-cache" }).then((r) => { if (r.ok) { const c = r.clone(); caches.open(CACHE).then((x) => x.put("index.html", c)); } return r; })
         .catch(() => caches.match("index.html"))
     );
     return;

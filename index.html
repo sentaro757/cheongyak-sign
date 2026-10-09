@@ -20,7 +20,27 @@
 <meta property="og:image:width" content="512">
 <meta property="og:image:height" content="512">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<script>if("serviceWorker" in navigator) addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});</script>
+<script>(function(){
+  var V="8e0cd28c0a", t0=Date.now(), early=function(){ return Date.now()-t0<8000; };
+  window.__APPVER=V;
+  if(/[?&]v=/.test(location.search)) history.replaceState(null,"",location.pathname+location.hash);
+  function go(v){
+    var k="cheongyak-sign.went-"+v;
+    try{ if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,"1"); }catch(e){ return; }
+    location.replace(location.pathname+"?v="+v);
+  }
+  try{
+    fetch("version.json?t="+t0,{cache:"no-store"}).then(function(r){ return r.json(); })
+      .then(function(j){ if(j&&j.v&&j.v!==V&&early()) go(j.v); }).catch(function(){});
+  }catch(e){}
+  if("serviceWorker" in navigator){
+    var had=!!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange",function(){ if(had&&early()) go("sw-"+t0); });
+    addEventListener("load",function(){
+      navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(function(r){ r.update(); }).catch(function(){});
+    });
+  }
+})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;600&family=Nanum+Pen+Script&display=swap">
