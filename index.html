@@ -141,7 +141,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .card h2{margin:0;font-size:15px}
 .field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
 .field input[type=text]{font:16px var(--ui);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
-.padbox{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;touch-action:none;overflow:hidden}
+.padbox{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;touch-action:none;overflow:hidden;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html.locked,html.locked body{overscroll-behavior:none}
+html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden!important;overscroll-behavior:none;touch-action:none}
 .padbox canvas{display:block;width:100%;height:200px;touch-action:none}
 .padbox .base{position:absolute;left:6%;right:6%;bottom:22%;border-bottom:1px solid #c8cfdb;pointer-events:none}
 .padbox .ph{position:absolute;left:0;right:0;top:44%;transform:translateY(-50%);text-align:center;color:#9aa3b2;pointer-events:none;font-size:15px}
@@ -502,11 +505,37 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       });
       P.redraw();
     });
-    function end(){ if(P.cur){ P.cur=null; if(onChange) onChange(); } }
+    function end(){ inking(false); if(P.cur){ P.cur=null; if(onChange) onChange(); } }
     cv.addEventListener("pointerup",end); cv.addEventListener("pointercancel",end);
-    /* iOS 사파리에서 판 위 손가락이 화면을 끌어내리지 않게 */
-    cv.addEventListener("touchmove",function(e){ e.preventDefault(); },{passive:false});
+    cv.addEventListener("lostpointercapture",end);
+    /* 판 위의 손가락은 글씨만 쓴다 — 화면 스크롤·확대·당겨서 새로고침으로 새지 않게.
+       iOS 사파리는 touch-action 만으로는 부족해 터치 이벤트를 직접 막아야 한다. */
+    function stop(e){ if(e.cancelable) e.preventDefault(); }
+    ["touchstart","touchmove","touchend"].forEach(function(t){
+      cv.addEventListener(t,stop,{passive:false});
+      cv.parentNode.addEventListener(t,stop,{passive:false});
+    });
+    cv.addEventListener("pointerdown",function(){ inking(true); });
     return P;
+  }
+  /* 획을 긋는 동안은 모든 스크롤을 멈춘다 */
+  function inking(on){ document.documentElement.classList.toggle("inking",!!on); }
+  /* 서명 창·고객 화면이 떠 있는 동안 뒤 화면이 움직이지 않게 고정한다(iOS는 overflow 만으로 안 멈춘다) */
+  var locks=0, lockY=0;
+  function lockScroll(on){
+    if(on){
+      if(locks++) return;
+      lockY=window.scrollY||0;
+      var b=document.body.style;
+      b.position="fixed"; b.top=(-lockY)+"px"; b.left="0"; b.right="0"; b.width="100%";
+      document.documentElement.classList.add("locked");
+    } else {
+      if(!locks || --locks) return;
+      var s=document.body.style;
+      s.position=""; s.top=""; s.left=""; s.right=""; s.width="";
+      document.documentElement.classList.remove("locked");
+      window.scrollTo(0,lockY);
+    }
   }
   function drawStroke(ctx,st,w,h,ink){
     var u=Math.min(w,h*3)/600;           /* 판 크기 기준 선 굵기 단위 */
@@ -649,6 +678,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     $("pad-text").value=s.text||"";
     $("pad-remember").checked=s.remember;
     $("pad-del").hidden=!!fresh && !s.img;
+    if($("pad").hidden) lockScroll(true);
     $("pad").hidden=false;
     setPadMode(PD.mode);
     if(s.img && !AP.strokes.length && s.mode==="draw"){
@@ -663,8 +693,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
       if(S.active===s.id) S.active=null;
       renderTray(); syncPicking();
     }
-    $("pad").hidden=true; PD.id=null;
+    hidePad();
   }
+  function hidePad(){ if(!$("pad").hidden){ $("pad").hidden=true; lockScroll(false); } PD.id=null; }
   function setPadMode(m){
     PD.mode=m;
     [].forEach.call($("pad-mode").children,function(b){ b.classList.toggle("on",b.dataset.m===m); });
@@ -708,7 +739,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     s.remember=$("pad-remember").checked;
     if(c!=="keep") setStampImage(s,c,PD.mode==="draw"?AP.strokes:null);
     s.mode=PD.mode; s.ink=AP.ink; s.font=PD.font;
-    $("pad").hidden=true; PD.id=null;
+    hidePad();
     S.active=s.id;
     persist(); renderTray(); syncPicking(); renderAllOverlays();
     toast("'"+s.label+"' 준비됨 — 청약서에서 넣을 곳을 누르세요");
@@ -724,7 +755,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     S.placements=S.placements.filter(function(p){ return p.stamp!==s.id; });
     S.stamps=S.stamps.filter(function(x){ return x!==s; });
     if(S.active===s.id) S.active=null;
-    $("pad").hidden=true; PD.id=null;
+    hidePad();
     persist(); renderTray(); syncPicking(); renderAllOverlays();
   });
   $("pad").addEventListener("pointerdown",function(e){ if(e.target===$("pad")) closePad(); });
@@ -1090,13 +1121,13 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     for(var k=0;k<asks.length;k++) if(!asks[k].done()){ C.i=k; break; }
     if(asks.every(function(a){ return a.done(); })) C.i=0;
     $("cust").hidden=false; $("cust-sign").hidden=false; $("cust-done").hidden=true;
-    document.body.style.overflow="hidden";
+    lockScroll(true);
     var el=document.documentElement;
     try{ if(el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(function(){}); }catch(e){}
     showAsk();
   }
   function leaveCustomer(){
-    $("cust").hidden=true; document.body.style.overflow="";
+    $("cust").hidden=true; lockScroll(false);
     try{ if(document.fullscreenElement) document.exitFullscreen().catch(function(){}); }catch(e){}
     renderTray(); renderAllOverlays();
   }
