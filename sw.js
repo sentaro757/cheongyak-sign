@@ -1,4 +1,4 @@
-const CACHE = "cheongyak-sign-8e0cd28c0a";
+const CACHE = "cheongyak-sign-54d0b4f745";
 const CORE = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));

@@ -21,7 +21,7 @@
 <meta property="og:image:height" content="512">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>(function(){
-  var V="8e0cd28c0a", t0=Date.now(), early=function(){ return Date.now()-t0<8000; };
+  var V="54d0b4f745", t0=Date.now(), early=function(){ return Date.now()-t0<8000; };
   window.__APPVER=V;
   if(/[?&]v=/.test(location.search)) history.replaceState(null,"",location.pathname+location.hash);
   function go(v){
@@ -77,7 +77,8 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--ui);margin:0;overscroll-behavior-y:contain}
+html,body{overscroll-behavior-y:none}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--ui);margin:0}
 button{font:inherit;color:inherit}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -258,6 +259,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     <label><input type="checkbox" id="hints" checked> 서명 자리 표시 <b id="hintn"></b></label>
     <span id="count"></span>
     <button class="btn warn sp" id="clear" disabled>칸 모두 지우기</button>
+    <button class="btn" id="close-work" hidden title="이 기기에 저장된 청약서와 서명을 지웁니다">작업 끝내기</button>
   </div>
 </div>
 
@@ -655,6 +657,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     add.type="button"; add.className="chip add"; add.textContent="+ 추가";
     add.addEventListener("click",openAdd);
     tr.appendChild(add);
+    saveWork();
   }
   function syncPicking(){ $("pages").classList.toggle("picking",!!S.active); }
 
@@ -1104,6 +1107,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     var left=pendingAsks();
     $("handn").textContent=left?"("+left+")":"";
     $("clear").disabled=!n;
+    saveWork();
   }
 
   /* ═════════ 고객 서명 받기 ═════════
@@ -1128,10 +1132,10 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     });
     return asks.filter(function(a){ return a.s; });
   }
-  var CP = makePad($("c-cv"),$("c-ph"));
+  var CP = makePad($("c-cv"),$("c-ph"),function(){ saveWork(); });
   var C = { asks:[], i:0 };
 
-  function enterCustomer(){
+  function enterCustomer(resume){
     var asks=buildAsks();
     if(!asks.length){
       toast(S.placements.length ? "고객이 쓸 칸이 없습니다. 고객 항목(계약자 서명 등)으로 칸을 만드세요"
@@ -1143,14 +1147,20 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     C.i=0;
     for(var k=0;k<asks.length;k++) if(!asks[k].done()){ C.i=k; break; }
     if(asks.every(function(a){ return a.done(); })) C.i=0;
+    if(resume && resume.i!=null) C.i=Math.min(resume.i,asks.length-1);
     $("cust").hidden=false; $("cust-sign").hidden=false; $("cust-done").hidden=true;
     lockScroll(true);
     var el=document.documentElement;
-    try{ if(el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(function(){}); }catch(e){}
+    if(!resume) try{ if(el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(function(){}); }catch(e){}
+    if(resume && resume.done){ showDone(); saveWork(); return; }
     showAsk();
+    if(resume && resume.strokes && resume.strokes.length){
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ CP.strokes=resume.strokes; CP.bg=null; CP.redraw(); }); });
+    }
+    saveWork();
   }
   function leaveCustomer(){
-    $("cust").hidden=true; lockScroll(false);
+    $("cust").hidden=true; lockScroll(false); saveWork();
     try{ if(document.fullscreenElement) document.exitFullscreen().catch(function(){}); }catch(e){}
     renderTray(); renderAllOverlays();
   }
@@ -1167,6 +1177,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     $("c-say").textContent=sayFor(s);
     $("c-prev").disabled=C.i===0;
     $("c-next").textContent = C.i===n-1 ? "마치기" : "다음 →";
+    saveWork();
     CP.strokes=[]; CP.bg=null; CP.ink="#151a24";
     var have = a.kind==="own" ? a.p.img : s.img;
     if(have){ var im=new Image(); im.onload=function(){ if(C.asks[C.i]===a){ CP.bg=im; CP.redraw(); } }; im.src=have; }
@@ -1233,6 +1244,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
   });
   $("c-prev").addEventListener("click",function(){ commitAsk(); if(C.i>0){ C.i--; showAsk(); } });
   function showDone(){
+    setTimeout(saveWork,0);
     $("cust-sign").hidden=true; $("cust-done").hidden=false;
     var th=$("c-thumbs"); th.innerHTML="";
     C.asks.forEach(function(a){
@@ -1562,6 +1574,87 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     return {};
   })();
 
+  /* ═════════ 작업 이어하기 ═════════
+     당겨서 새로고침, 앱 전환, 기기가 앱을 정리해도 작업이 그대로 남게 한다.
+     청약서 PDF·칸·서명·보던 위치·고객 화면 단계를 이 기기의 IndexedDB 에만 둔다(어디로도 보내지 않는다).
+     '작업 끝내기'를 누르거나 7일이 지나면 지운다. */
+  var WORK_KEY="work", WORK_TTL=7*24*3600e3;
+  var idb=(function(){
+    var p=null;
+    function open(){
+      if(p) return p;
+      p=new Promise(function(res,rej){
+        try{
+          var r=indexedDB.open("cheongyak-sign",1);
+          r.onupgradeneeded=function(){ r.result.createObjectStore("kv"); };
+          r.onsuccess=function(){ res(r.result); }; r.onerror=function(){ rej(r.error); };
+        }catch(e){ rej(e); }
+      });
+      return p;
+    }
+    function tx(mode,fn){
+      return open().then(function(db){ return new Promise(function(res,rej){
+        var t=db.transaction("kv",mode), st=t.objectStore("kv"), out=fn(st);
+        t.oncomplete=function(){ res(out&&out.result); }; t.onerror=function(){ rej(t.error); }; t.onabort=function(){ rej(t.error); };
+      }); });
+    }
+    return {
+      get:function(k){ return tx("readonly",function(s){ return s.get(k); }); },
+      set:function(k,v){ return tx("readwrite",function(s){ s.put(v,k); }); },
+      del:function(k){ return tx("readwrite",function(s){ s.delete(k); }); }
+    };
+  })();
+  var saveT=null, restoring=false;
+  function workSnapshot(){
+    var custOpen=!$("cust").hidden;
+    return {
+      v:1, at:Date.now(), name:S.name, bytes:S.bytes,
+      stamps:S.stamps.map(function(s){ var o={}; for(var k in s) o[k]=s[k]; return o; }),
+      placements:S.placements, mode:S.mode, zoom:S.zoom, active:S.active,
+      scrollY: custOpen||document.body.style.position==="fixed" ? lockY : (window.scrollY||0),
+      cust: custOpen ? { i:C.i, done:!$("cust-done").hidden, strokes:CP.strokes } : null
+    };
+  }
+  function saveNow(){
+    clearTimeout(saveT); saveT=null;
+    if(restoring||S.sample||!S.bytes) return;
+    try{ idb.set(WORK_KEY,workSnapshot()).catch(function(e){ console.warn("작업 저장 실패",e); }); }catch(e){}
+    $("close-work").hidden=false;
+  }
+  function saveWork(){ if(restoring||S.sample||!S.bytes) return; clearTimeout(saveT); saveT=setTimeout(saveNow,400); }
+  window.addEventListener("scroll",function(){ if($("cust").hidden) saveWork(); },{passive:true});
+  document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="hidden") saveNow(); });
+  window.addEventListener("pagehide",saveNow);
+  try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(function(){}); }catch(e){}
+
+  function restoreWork(w){
+    restoring=true;
+    S.sample=false; $("samplenote").hidden=true;
+    S.stamps=w.stamps; S.placements=w.placements||[]; S.active=w.active||null;
+    S.zoom=w.zoom||1; $("zv").textContent=Math.round(S.zoom*100)+"%";
+    setSignMode(w.mode==="copy"?"copy":"each");
+    renderTray(); syncPicking();
+    return openBytes(new Uint8Array(w.bytes),w.name).then(function(){
+      window.scrollTo(0,w.scrollY||0);
+      /* 고객 화면이었다면, 쪽 그림이 다 그려진 뒤에 그 단계로 돌아간다(청약서 자리 미리보기에 쓰인다) */
+      var waits=S.pages.map(function(r){ return r.task ? r.task.promise.catch(function(){}) : null; });
+      return Promise.all(waits);
+    }).then(function(){
+      restoring=false;
+      $("close-work").hidden=false;
+      if(w.cust) enterCustomer(w.cust);
+      else saveNow();
+      var min=Math.round((Date.now()-w.at)/60000);
+      toast("하던 작업을 이어서 엽니다"+(min>=1?" (마지막 저장 "+(min<60?min+"분":Math.round(min/60)+"시간")+" 전)":""),3200);
+    }).catch(function(e){ restoring=false; throw e; });
+  }
+  $("close-work").addEventListener("click",function(){
+    armButton(this,"작업 끝내기","저장된 청약서·서명을 지웁니다 — 한 번 더",function(){
+      clearTimeout(saveT); S.bytes=null;
+      idb.del(WORK_KEY).catch(function(){}).then(function(){ location.reload(); });
+    });
+  });
+
   /* ═════════ 시작 ═════════ */
   function boot(){
     var m=lsGet(LS_MODE); setSignMode(m==="copy"?"copy":"each");
@@ -1576,11 +1669,17 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
     renderTray(); updateCounts(); $("zv").textContent="100%";
     if(!PL||!PDFJS){ $("samplenote").hidden=true; toast("PDF 모듈을 불러오지 못했습니다. 새로고침해 주세요.",6000); return; }
 
+    var resumed = idb.get(WORK_KEY).then(function(w){
+      if(!w||!w.bytes) return false;
+      if(Date.now()-w.at>WORK_TTL){ idb.del(WORK_KEY).catch(function(){}); return false; }
+      return restoreWork(w).then(function(){ return true; });
+    }).catch(function(e){ console.warn("작업 복원 실패",e); restoring=false; return false; });
+
     var fontReady = (document.fonts&&document.fonts.load)
       ? Promise.race([document.fonts.load('140px "Nanum Pen Script"'),new Promise(function(r){ setTimeout(r,1500); })]).catch(function(){})
       : Promise.resolve();
     var sg, nm;
-    fontReady.then(function(){
+    resumed.then(function(r){ if(r) throw "resumed"; return fontReady; }).then(function(){
       sg=sampleSign("#151a24"); nm=typedCanvas("홍길동","pen","#151a24");
       return buildSample();
     }).then(function(sm){
@@ -1604,7 +1703,7 @@ html.inking,html.inking body,html.inking .cust,html.inking .card{overflow:hidden
         $("fname").textContent="예시 청약서";
         renderAllOverlays();
       });
-    }).catch(function(e){ console.error(e); });
+    }).catch(function(e){ if(e!=="resumed") console.error(e); });
 
     var p; try{ p=(window.claude&&claude.use)?claude.use("downloads"):Promise.resolve(null); }catch(e){ p=Promise.resolve(null); }
     p.then(function(d){ DOWNLOADS=d; },function(){});
